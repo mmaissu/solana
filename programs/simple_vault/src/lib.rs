@@ -39,6 +39,11 @@ pub mod simple_vault {
         card.bump = ctx.bumps.user_card;
         Ok(())
     }
+    //Задание 2
+    /// Закрыть карточку пользователя, рента возвращается владельцу.
+    pub fn close_user_card(_ctx: Context<CloseUserCard>) -> Result<()> {
+        Ok(())
+    }
 
     /// Пользователь вносит `amount` токенов → получает shares.
     ///
@@ -372,6 +377,27 @@ pub struct CreateUserCard<'info> {
     pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
+}
+// Задание 2
+#[derive(Accounts)]
+pub struct CloseUserCard<'info> {
+    #[account(
+        seeds = [b"vault", vault_state.token_mint.as_ref()],
+        bump = vault_state.bump,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+
+    #[account(
+        mut,
+        close = user,
+        seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
+        bump = user_card.bump,
+        constraint = user_card.owner == user.key()
+    )]
+    pub user_card: Account<'info, UserCard>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
