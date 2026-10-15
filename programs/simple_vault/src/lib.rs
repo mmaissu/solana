@@ -29,12 +29,13 @@ pub mod simple_vault {
         msg!("Vault initialized for mint: {}", vault.token_mint);
         Ok(())
     }
-    
+    //Задание 1
     /// Создать личную карточку пользователя в vault.
     pub fn create_user_card(ctx: Context<CreateUserCard>) -> Result<()> {
         let card = &mut ctx.accounts.user_card;
         card.vault = ctx.accounts.vault_state.key();
         card.owner = ctx.accounts.user.key();
+        card.created_at = Clock::get()?.unix_timestamp;
         card.bump = ctx.bumps.user_card;
         Ok(())
     }
@@ -393,16 +394,18 @@ impl VaultState {
     pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1;
 }
 
+//Задание 1
 #[account]
 #[derive(Default)]
 pub struct UserCard {
-    pub vault: Pubkey, // 32
-    pub owner: Pubkey, // 32
-    pub bump: u8,      // 1
+    pub vault: Pubkey,   // 32
+    pub owner: Pubkey,   // 32
+    pub created_at: i64, // 8
+    pub bump: u8,        // 1
 }
 
 impl UserCard {
-    pub const LEN: usize = 8 + 32 + 32 + 1;
+    pub const LEN: usize = 8 + 32 + 32 + 8 + 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
