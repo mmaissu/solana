@@ -29,6 +29,15 @@ pub mod simple_vault {
         msg!("Vault initialized for mint: {}", vault.token_mint);
         Ok(())
     }
+    
+    /// Создать личную карточку пользователя в vault.
+    pub fn create_user_card(ctx: Context<CreateUserCard>) -> Result<()> {
+        let card = &mut ctx.accounts.user_card;
+        card.vault = ctx.accounts.vault_state.key();
+        card.owner = ctx.accounts.user.key();
+        card.bump = ctx.bumps.user_card;
+        Ok(())
+    }
 
     /// Пользователь вносит `amount` токенов → получает shares.
     ///
@@ -341,6 +350,28 @@ pub struct Withdraw<'info> {
 
     pub token_program: Program<'info, Token>,
 }
+#[derive(Accounts)]
+pub struct CreateUserCard<'info> {
+    #[account(
+        seeds = [b"vault", vault_state.token_mint.as_ref()],
+        bump = vault_state.bump,
+    )]
+    pub vault_state: Account<'info, VaultState>,
+
+    #[account(
+        init,
+        payer = user,
+        space = UserCard::LEN,
+        seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
+        bump,
+    )]
+    pub user_card: Account<'info, UserCard>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State
@@ -360,6 +391,18 @@ pub struct VaultState {
 
 impl VaultState {
     pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1;
+}
+
+#[account]
+#[derive(Default)]
+pub struct UserCard {
+    pub vault: Pubkey, // 32
+    pub owner: Pubkey, // 32
+    pub bump: u8,      // 1
+}
+
+impl UserCard {
+    pub const LEN: usize = 8 + 32 + 32 + 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
