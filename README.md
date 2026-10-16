@@ -1,28 +1,68 @@
-# Simple Vault — практика Anchor
+# Simple Vault — неделя 8
 
-Минимальный SPL-токен vault на Anchor 0.31.1.  
-Три инструкции: `initialize_vault` → `deposit` → `withdraw`.
+Учебный SPL-токен vault на Anchor 0.31.1 (Solana). Пользователи вносят токены и получают shares, у каждого пользователя есть личная карточка (`UserCard`), админ может поставить vault на паузу.
+
+Program ID (devnet): `25exdZUmhe6Xah5wxHrXf1w851F3Da36tb4W2E6fG6L4`
 
 ---
 
-## Что делает контракт
+## Инструкции
 
-```
-initialize_vault   создаёт VaultState PDA, vault token account, share mint
-deposit(amount)    переводит токены в vault → минтит shares пользователю
-withdraw(shares)   сжигает shares → возвращает токены пользователю
-```
+| Инструкция | Что делает |
+|---|---|
+| `initialize_vault` | Создаёт `VaultState` PDA, vault token account и share mint |
+| `deposit(amount)` | Переводит токены в vault и минтит shares пользователю |
+| `withdraw(shares)` | Сжигает shares и возвращает токены пользователю |
+| `create_user_card` | Создаёт личную карточку пользователя (`UserCard`) в vault |
+| `close_user_card` | Закрывает карточку, рента возвращается владельцу |
+| `set_paused(paused)` | Админ включает или снимает паузу |
+| `open_raydium_position`, `close_raydium_position` | Открытие и закрытие позиции в Raydium CLMM через CPI (в тестах не покрыты) |
 
 **Формула shares:**
+
 ```
-Первый депозит:       shares = amount          (1:1)
+Первый депозит:       shares = amount                    (1:1)
 Последующие:          shares = amount × total_shares / total_tokens
 Вывод:                tokens = shares × total_tokens / total_shares
 ```
 
 ---
 
-## Предварительные требования
+## Выполненные задания практики
+
+| Задание | Что сделано |
+|---|---|
+| `created_at` | В `UserCard` добавлено поле `created_at: i64`, в `create_user_card` записывается `Clock::get()?.unix_timestamp` |
+| `close_user_card` | Новая инструкция: закрывает карточку (`close = user`), рента возвращается владельцу. Чужую карточку закрыть нельзя: сиды PDA зависят от `user`, плюс проверка `owner == user` |
+| Пауза vault | В `VaultState` добавлено поле `paused: bool`. `set_paused` доступна только админу (`has_one = admin`). При `paused = true` `create_user_card` падает с ошибкой `VaultPaused` |
+
+---
+
+## Аккаунты
+
+### PDA и seeds
+
+| PDA | Seeds |
+|---|---|
+| `vault_state` | `["vault", token_mint]` |
+| `vault_token_account` | `["vault_tokens", token_mint]` |
+| `share_mint` | `["share_mint", token_mint]` |
+| `user_card` | `["user_card", vault_state, user]` |
+
+У одного пользователя в одном vault может быть только одна карточка. Повторный `create_user_card` завершится ошибкой.
+
+### UserCard
+
+| Поле | Описание |
+|---|---|
+| `vault` | к какому vault относится карточка |
+| `owner` | владелец карточки |
+| `created_at` | время создания (unix timestamp) |
+| `bump` | bump PDA |
+
+---
+
+## Требования
 
 | Инструмент | Версия | Установка |
 |---|---|---|
@@ -32,129 +72,87 @@ withdraw(shares)   сжигает shares → возвращает токены �
 | Node.js | 18+ | https://nodejs.org |
 | Yarn | any | `npm i -g yarn` |
 
+На Windows сборку удобнее запускать в WSL.
+
 ---
 
 ## Быстрый старт
 
-### 1. Установить зависимости
-
 ```bash
-cd vault-simple
+# 1. Зависимости
 yarn install
-```
 
-### 2. Сбилдить контракт
-
-```bash
+# 2. Сборка
 anchor build
-```
 
-Артефакты появятся в `target/deploy/`:
-- `simple_vault.so` — скомпилированная программа
-- `simple_vault-keypair.json` — keypair программы
+# 3. Свой Program ID (если проект новый или форк)
+anchor keys sync     # обновит declare_id! в lib.rs и Anchor.toml
+anchor build
 
-### 3. Получить Program ID
-
-```bash
-anchor keys list
-# simple_vault: EbojNUfh9Jk6dyZaaQAJWofbdnkvdxfQbeAPq6iWoHAu
-```
-
-Если создаёшь **с нуля** (новый keypair):
-```bash
-# после первого anchor build:
-anchor keys sync    # обновит declare_id! в lib.rs и Anchor.toml автоматически
-anchor build        # пересобрать с новым ID
-```
-
-### 4. Получить devnet SOL
-
-```bash
+# 4. Devnet и SOL
 solana config set --url devnet
-solana address                  # покажет твой адрес
-solana airdrop 2                # или через https://faucet.solana.com
-solana balance
-```
+solana address
+solana airdrop 2     # или https://faucet.solana.com
+solana balance       # для деплоя нужно ~2.5 SOL
 
-> Для деплоя нужно **~2.5 SOL** на devnet.
-
-### 5. Задеплоить на devnet
-
-```bash
+# 5. Деплой
 anchor deploy --provider.cluster devnet
+
+# 6. Тесты
+yarn test
 ```
 
-Успешный вывод:
-```
-Program Id: EbojNUfh9Jk6dyZaaQAJWofbdnkvdxfQbeAPq6iWoHAu
-Deploy success
-```
-
-### 6. Запустить тесты
-
-```bash
-anchor test --provider.cluster devnet --skip-local-validator
-```
+Файл `target/deploy/simple_vault-keypair.json` коммитить нельзя.
 
 ---
 
 ## Структура проекта
 
 ```
-vault-simple/
-├── Anchor.toml                  # конфиг: cluster=devnet, program ID
-├── Cargo.toml                   # workspace
+vault-dev/
+├── Anchor.toml
+├── Cargo.toml
 ├── package.json
-├── tsconfig.json
-├── programs/
-│   └── simple_vault/
-│       ├── Cargo.toml
-│       └── src/
-│           └── lib.rs           # весь контракт (инструкции + аккаунты + ошибки)
-└── tests/
-    └── vault.ts                 # TypeScript тесты (два пользователя)
+├── programs/simple_vault/src/
+│   ├── lib.rs                  # инструкции, аккаунты, состояние, ошибки
+│   └── instructions/           # Raydium: open_position, close_position
+└── tests/vault.ts              # тесты
 ```
 
 ---
 
-## Тест-сценарий
+## Тесты
 
-Тесты (`tests/vault.ts`) покрывают:
+Всего 12 тестов (`12 passing`).
 
-1. **initialize_vault** — vault создан, `total_tokens=0`, `total_shares=0`
-2. **UserA deposit 100** — получает 100 shares (1:1, первый депозит)
-3. **UserB deposit 50** — получает 50 shares, соотношение A/B = 66.7%/33.3%
-4. **UserA withdraw 50 shares** — получает 50 токенов обратно
-5. **Итог** — UserA и UserB по 50 shares (50%/50%), on-chain баланс совпадает с vault state
+**Vault (5):**
 
----
+1. `initialize_vault`: vault создан, `total_tokens = 0`, `total_shares = 0`
+2. UserA вносит 100: получает 100 shares (1:1)
+3. UserB вносит 50: получает 50 shares, доли 66.7% / 33.3%
+4. UserA выводит 50 shares: получает 50 токенов
+5. Итог: доли A и B по 50%, on-chain баланс совпадает с состоянием vault
 
-## PDAs (Seeds)
+**UserCard и пауза (7):**
 
-| PDA | Seeds |
-|---|---|
-| `vault_state` | `["vault", token_mint]` |
-| `vault_token_account` | `["vault_tokens", token_mint]` |
-| `share_mint` | `["share_mint", token_mint]` |
-
----
-
-## Возможные ошибки
-
-| Ошибка | Причина |
-|---|---|
-| `insufficient funds` при деплое | Нужно больше SOL → `solana airdrop` или https://faucet.solana.com |
-| `AccountNotInitialized` в тестах | Забыл задеплоить или указан неверный cluster |
-| `ZeroAmount` | Передан `amount = 0` |
-| `SharesTooSmall` | Депозит слишком мал относительно TVL vault |
+6. Карточка создаётся, `created_at > 0`
+7. Вторая карточка того же пользователя: ошибка
+8. Чужую карточку закрыть нельзя
+9. Владелец закрывает карточку и получает ренту
+10. После закрытия карточку можно создать заново
+11. Не админ не может поставить паузу
+12. При паузе `create_user_card` падает с `VaultPaused`, после снятия паузы работает
 
 ---
 
-## Задание для практики
+## Частые ошибки
 
-Реализовать самостоятельно или изменить:
-
-- [ ] Добавить **комиссию 1%** при депозите (переводить на `fee_wallet`)
-- [ ] Добавить **паузу** (`is_paused: bool`) — admin может остановить депозиты
-- [ ] Добавить **минимальный депозит** (например, ≥ 1 токен)
-- [ ] Написать тест: **три пользователя** делают deposit → все выводят → vault пуст
+| Ошибка | Причина | Решение |
+|---|---|---|
+| `insufficient funds` при деплое | мало SOL | пополни кошелёк на devnet |
+| `AccountNotInitialized` в тестах | программа не задеплоена или другой ID | `anchor keys sync` → `anchor build` → `anchor deploy` |
+| `already in use` при `create_user_card` | у пользователя уже есть карточка | ожидаемо, карточка одна на пользователя |
+| `VaultPaused` | админ поставил vault на паузу | `set_paused(false)` от админа |
+| `ZeroAmount` | передан `amount = 0` | передай сумму больше нуля |
+| `SharesTooSmall` | депозит слишком мал относительно vault | увеличь сумму депозита |
+| `429 Too Many Requests` в тестах | лимит публичного devnet RPC | подожди, запросы повторяются сами |

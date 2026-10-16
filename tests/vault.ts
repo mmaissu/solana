@@ -326,4 +326,113 @@ describe("simple_vault", () => {
     console.log(`  ✓ UserA = UserB = 50% vault`);
     console.log(`  ✓ on-chain баланс совпадает с vault state`);
   });
+  
+  // ─────────────────────────────────────────────────────────────────────────
+  // UserCard + paused (задания практики)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const cardPDA = (user: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("user_card"), vaultStatePDA.toBuffer(), user.toBuffer()],
+      program.programId
+    )[0];
+
+  const createCard = (user: Keypair) =>
+    program.methods
+      .createUserCard()
+      .accountsPartial({
+        vaultState: vaultStatePDA,
+        userCard: cardPDA(user.publicKey),
+        user: user.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([user])
+      .rpc();
+
+  const closeCard = (user: Keypair, cardOf: PublicKey) =>
+    program.methods
+      .closeUserCard()
+      .accountsPartial({
+        vaultState: vaultStatePDA,
+        userCard: cardPDA(cardOf),
+        user: user.publicKey,
+      })
+      .signers([user])
+      .rpc();
+
+  const setPaused = (signer: Keypair, paused: boolean) =>
+    program.methods
+      .setPaused(paused)
+      .accountsPartial({
+        admin: signer.publicKey,
+        vaultState: vaultStatePDA,
+      })
+      .signers([signer])
+      .rpc();
+
+  const expectFail = async (p: Promise<unknown>, text?: string) => {
+    let err: any = null;
+    try {
+      await p;
+    } catch (e) {
+      err = e;
+    }
+    assert.isNotNull(err, "ожидалась ошибка");
+    if (text) assert.include(String(err), text);
+  };
+
+  // ─── Задание 1: created_at ─────────────────────────────────────────────────
+  it("create_user_card: карточка создаётся, created_at заполнен", async () => {
+    await createCard(userA);
+
+    const card = await program.account.userCard.fetch(cardPDA(userA.publicKey));
+    assert.equal(card.owner.toBase58(), userA.publicKey.toBase58());
+    assert.equal(card.vault.toBase58(), vaultStatePDA.toBase58());
+    assert.ok(card.createdAt.toNumber() > 0, "created_at должен быть > 0");
+  });
+
+  it("create_user_card: вторая карточка того же пользователя — ошибка", async () => {
+    await expectFail(createCard(userA));
+  });
+
+  // ─── Задание 2: close_user_card ────────────────────────────────────────────
+  it("close_user_card: чужую карточку закрыть нельзя", async () => {
+    await expectFail(closeCard(userB, userA.publicKey));
+  });
+
+  it("close_user_card: владелец закрывает карточку и получает ренту", async () => {
+    const before = await connection.getBalance(userA.publicKey);
+    await closeCard(userA, userA.publicKey);
+    const after = await connection.getBalance(userA.publicKey);
+
+    const card = await program.account.userCard.fetchNullable(
+      cardPDA(userA.publicKey)
+    );
+    assert.isNull(card, "аккаунт карточки должен быть закрыт");
+    assert.isAbove(after, before, "рента вернулась (с учётом комиссии)");
+  });
+
+  it("close_user_card: после закрытия карточку можно создать заново", async () => {
+    await createCard(userA);
+    const card = await program.account.userCard.fetch(cardPDA(userA.publicKey));
+    assert.ok(card.createdAt.toNumber() > 0);
+  });
+
+  // ─── Задание 3: paused ─────────────────────────────────────────────────────
+  it("set_paused: не админ не может включить паузу", async () => {
+    await expectFail(setPaused(userB, true));
+  });
+
+  it("paused: при паузе create_user_card падает, после снятия паузы работает", async () => {
+    await setPaused(admin, true);
+    const vault = await program.account.vaultState.fetch(vaultStatePDA);
+    assert.isTrue(vault.paused);
+
+    await expectFail(createCard(userB), "VaultPaused");
+
+    await setPaused(admin, false);
+    await createCard(userB);
+    const card = await program.account.userCard.fetch(cardPDA(userB.publicKey));
+    assert.equal(card.owner.toBase58(), userB.publicKey.toBase58());
+  });
 });

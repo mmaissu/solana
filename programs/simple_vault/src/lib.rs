@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer}
 pub mod instructions;
 use instructions::*;
 
-declare_id!("EbojNUfh9Jk6dyZaaQAJWofbdnkvdxfQbeAPq6iWoHAu");
+declare_id!("25exdZUmhe6Xah5wxHrXf1w851F3Da36tb4W2E6fG6L4");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Program entry points
