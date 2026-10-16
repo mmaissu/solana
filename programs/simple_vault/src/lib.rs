@@ -25,13 +25,15 @@ pub mod simple_vault {
         vault.total_tokens = 0;
         vault.total_shares = 0;
         vault.bump = ctx.bumps.vault_state;
+        vault.paused = false;
 
         msg!("Vault initialized for mint: {}", vault.token_mint);
         Ok(())
     }
-    //Задание 1
+    //Задание 1 3
     /// Создать личную карточку пользователя в vault.
     pub fn create_user_card(ctx: Context<CreateUserCard>) -> Result<()> {
+        require!(!ctx.accounts.vault_state.paused, VaultError::VaultPaused);
         let card = &mut ctx.accounts.user_card;
         card.vault = ctx.accounts.vault_state.key();
         card.owner = ctx.accounts.user.key();
@@ -42,6 +44,13 @@ pub mod simple_vault {
     //Задание 2
     /// Закрыть карточку пользователя, рента возвращается владельцу.
     pub fn close_user_card(_ctx: Context<CloseUserCard>) -> Result<()> {
+        Ok(())
+    }
+
+    //Задание 3
+    /// Админ ставит vault на паузу или снимает её.
+    pub fn set_paused(ctx: Context<SetPaused>, paused: bool) -> Result<()> {
+        ctx.accounts.vault_state.paused = paused;
         Ok(())
     }
 
@@ -221,7 +230,8 @@ pub struct InitializeVault<'info> {
         space = VaultState::LEN,
         seeds = [b"vault", token_mint.key().as_ref()],
         bump,
-    )]
+ )]
+    
     pub vault_state: Account<'info, VaultState>,
 
     /// Token account, принадлежащий vault PDA — хранит депозиты пользователей
@@ -387,6 +397,7 @@ pub struct CloseUserCard<'info> {
     )]
     pub vault_state: Account<'info, VaultState>,
 
+
     #[account(
         mut,
         close = user,
@@ -398,6 +409,19 @@ pub struct CloseUserCard<'info> {
 
     #[account(mut)]
     pub user: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetPaused<'info> {
+    pub admin: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"vault", vault_state.token_mint.as_ref()],
+        bump = vault_state.bump,
+        has_one = admin,
+    )]
+    pub vault_state: Account<'info, VaultState>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,10 +438,11 @@ pub struct VaultState {
     pub total_tokens: u64,          // 8   — всего токенов в vault
     pub total_shares: u64,          // 8   — всего выпущенных shares
     pub bump: u8,                   // 1   — bump vault PDA
+    pub paused: bool,               // 1   — флаг паузы
 }
 
 impl VaultState {
-    pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1;
+    pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1 + 1;
 }
 
 //Задание 1
@@ -454,4 +479,6 @@ pub enum VaultError {
     Unauthorized,
     #[msg("tick_lower must be less than tick_upper")]
     InvalidTickRange,
+    #[msg("Vault is paused")]
+    VaultPaused,
 }
