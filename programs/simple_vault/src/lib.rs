@@ -452,12 +452,15 @@ pub struct UserCard {
     pub vault: Pubkey,   // 32
     pub owner: Pubkey,   // 32
     pub created_at: i64, // 8
+    pub deposited: u64,  // 8
+    pub shares: u64,     // 8
     pub bump: u8,        // 1
 }
 
 impl UserCard {
-    pub const LEN: usize = 8 + 32 + 32 + 8 + 1;
+    pub const LEN: usize = 8 + 32 + 32 + 8 + 8 + 8 + 1;
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors
