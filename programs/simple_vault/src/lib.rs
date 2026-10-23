@@ -113,6 +113,11 @@ pub mod simple_vault {
         vault.total_tokens = vault.total_tokens.checked_add(amount).ok_or(VaultError::MathOverflow)?;
         vault.total_shares = vault.total_shares.checked_add(shares).ok_or(VaultError::MathOverflow)?;
 
+        
+        let card = &mut ctx.accounts.user_card;
+        card.deposited = card.deposited.checked_add(amount).ok_or(VaultError::MathOverflow)?;
+        card.shares = card.shares.checked_add(shares).ok_or(VaultError::MathOverflow)?;
+
         msg!(
             "Deposit: {} tokens → {} shares (total_tokens={}, total_shares={})",
             amount, shares, vault.total_tokens, vault.total_shares
@@ -173,6 +178,7 @@ pub mod simple_vault {
         let vault = &mut ctx.accounts.vault_state;
         vault.total_tokens = vault.total_tokens.checked_sub(tokens_out).ok_or(VaultError::MathOverflow)?;
         vault.total_shares = vault.total_shares.checked_sub(shares_amount).ok_or(VaultError::MathOverflow)?;
+
 
         msg!(
             "Withdraw: {} shares → {} tokens (total_tokens={}, total_shares={})",
@@ -275,6 +281,15 @@ pub struct Deposit<'info> {
         bump = vault_state.bump,
     )]
     pub vault_state: Account<'info, VaultState>,
+
+    
+    #[account(
+        mut,
+        seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
+        bump = user_card.bump,
+        constraint = user_card.owner == user.key()
+    )]
+    pub user_card: Account<'info, UserCard>,
 
     /// Vault token account — принимает токены
     #[account(
