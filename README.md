@@ -1,162 +1,27 @@
-# Simple Vault — неделя 9
+Solana Liquidity Vault — Неделя 10 (Вывод средств и CPI)
 
-Учебный SPL-токен vault на Anchor 0.31.1 (Solana). Пользователи вносят токены и получают shares, у каждого пользователя есть личная карточка (`UserCard`), админ может поставить vault на паузу.
 
-Program ID (devnet): `25exdZUmhe6Xah5wxHrXf1w851F3Da36tb4W2E6fG6L4`
+## Что было сделано 
 
----
+1. **Доработка инструкций вывода и защиты данных:**
+* В логику `withdraw` внедрено корректное обновление пользовательской карточки (`user_card`): теперь при выводе уменьшается количество долей (`shares`) с помощью безопасной операции `saturating_sub`. При этом показатель `deposited` остаётся неизменным, выступая в роли исторической статистики всех вложенных средств.
+* Установлен строгий запрет на удаление активных счетов: инструкция `CloseUserCard` теперь проверяет, что на балансе карточки не осталось долей (`shares == 0`). Если пользователь попытается закрыть её раньше времени, контракт вернёт ошибку `CardHasShares`.
 
-## Инструкции
 
-| Инструкция | Что делает |
-|---|---|
-| `initialize_vault` | Создаёт `VaultState` PDA, vault token account и share mint |
-| `deposit(amount)` | Переводит токены в vault и минтит shares пользователю |
-| `withdraw(shares)` | Сжигает shares и возвращает токены пользователю |
-| `create_user_card` | Создаёт личную карточку пользователя (`UserCard`) в vault |
-| `close_user_card` | Закрывает карточку, рента возвращается владельцу |
-| `set_paused(paused)` | Админ включает или снимает паузу |
-| `open_raydium_position`, `close_raydium_position` | Открытие и закрытие позиции в Raydium CLMM через CPI (в тестах не покрыты) |
+2. **Интеграция кросс-программных вызовов (CPI) и тестов:**
+* Реализована связка с Token Program через CPI: операция `Burn` (сжигание share-токенов под контролем подписи юзера) и операция `Transfer` (перевод базовых активов из хранилища пользователю по сидам PDA с помощью `CpiContext::new_with_signer`).
+* Набор интеграционных тестов на TypeScript был расширен и теперь успешно проходит **18 тестов**. Проверены краевые случаи: попытка нулевого вывода, снятие средств сверх доступного баланса, защита от закрытия непустых карточек и полноценный сценарий вывода с последующим удалением карточки.
 
-Депозит возможен только после `create_user_card`: без карточки инструкция `deposit` вернёт ошибку `AccountNotInitialized`. При каждом депозите в карточке обновляются поля `deposited` и `shares`.
 
-**Формула shares:**
-
-```
-Первый депозит:       shares = amount                    (1:1)
-Последующие:          shares = amount × total_shares / total_tokens
-Вывод:                tokens = shares × total_tokens / total_shares
-```
+* **Прямая ссылка на транзакцию:** (https://explorer.solana.com/tx/ZhFQ7yaqHxj5Si5ZPbin8NE3z4jBErgiuzNNfEMim6MEoPua82uckxm67SwC9W7A7kWryUwCPLU5gZWe3Ldavrp?cluster=devnet)
 
 ---
 
-## Выполненные задания практики
+## Ответы на вопросы
 
-| Задание | Что сделано |
-|---|---|
-| `created_at` | В `UserCard` добавлено поле `created_at: i64`, в `create_user_card` записывается `Clock::get()?.unix_timestamp` |
-| `close_user_card` | Новая инструкция: закрывает карточку (`close = user`), рента возвращается владельцу. Чужую карточку закрыть нельзя: сиды PDA зависят от `user`, плюс проверка `owner == user` |
-| Пауза vault | В `VaultState` добавлено поле `paused: bool`. `set_paused` доступна только админу (`has_one = admin`). При `paused = true` `create_user_card` падает с ошибкой `VaultPaused` |
-
----
-
-## Аккаунты
-
-### PDA и seeds
-
-| PDA | Seeds |
-|---|---|
-| `vault_state` | `["vault", token_mint]` |
-| `vault_token_account` | `["vault_tokens", token_mint]` |
-| `share_mint` | `["share_mint", token_mint]` |
-| `user_card` | `["user_card", vault_state, user]` |
-
-У одного пользователя в одном vault может быть только одна карточка. Повторный `create_user_card` завершится ошибкой.
-
-### UserCard
-
-| Поле | Описание |
-|---|---|
-| `vault` | к какому vault относится карточка |
-| `owner` | владелец карточки |
-| `created_at` | время создания (unix timestamp) |
-| `bump` | bump PDA |
-| `deposited` | сколько токенов пользователь внёс всего |
-| `shares` | сколько share-токенов он получил |
-
----
-
-## Требования
-
-| Инструмент | Версия | Установка |
-|---|---|---|
-| Rust | stable | https://rustup.rs |
-| Solana CLI | 1.18+ | https://docs.solana.com/cli/install-solana-cli-tools |
-| Anchor CLI | 0.31.1 | `cargo install --git https://github.com/coral-xyz/anchor avm --locked && avm install 0.31.1 && avm use 0.31.1` |
-| Node.js | 18+ | https://nodejs.org |
-| Yarn | any | `npm i -g yarn` |
-
-На Windows сборку удобнее запускать в WSL.
-
----
-
-## Быстрый старт
-
-```bash
-# 1. Зависимости
-yarn install
-
-# 2. Сборка
-anchor build
-
-# 3. Свой Program ID (если проект новый или форк)
-anchor keys sync     # обновит declare_id! в lib.rs и Anchor.toml
-anchor build
-
-# 4. Devnet и SOL
-solana config set --url devnet
-solana address
-solana airdrop 2     # или https://faucet.solana.com
-solana balance       # для деплоя нужно ~2.5 SOL
-
-# 5. Деплой
-anchor deploy --provider.cluster devnet
-
-# 6. Тесты
-yarn test
-```
-
-Файл `target/deploy/simple_vault-keypair.json` коммитить нельзя.
-
----
-
-## Структура проекта
-
-```
-vault-dev/
-├── Anchor.toml
-├── Cargo.toml
-├── package.json
-├── programs/simple_vault/src/
-│   ├── lib.rs                  # инструкции, аккаунты, состояние, ошибки
-│   └── instructions/           # Raydium: open_position, close_position
-└── tests/vault.ts              # тесты
-```
-
----
-
-## Тесты
-
-Всего 14 тестов (`14 passing`).
-
-**Vault (6):**
-
-1. `initialize_vault`: vault создан, `total_tokens = 0`, `total_shares = 0`
-2. UserA вносит 100: получает 100 shares (1:1), в карточке `deposited` и `shares` обновлены
-3. UserB вносит 50: получает 50 shares, доли 66.7% / 33.3%
-4. Депозит суммы 0: ошибка `ZeroAmount`
-5. UserA выводит 50 shares: получает 50 токенов
-6. Итог: доли A и B по 50%, on-chain баланс совпадает с состоянием vault
-
-**UserCard, пауза и депозит без карточки (8):**
-
-7. Карточка создаётся, `created_at > 0`
-8. Вторая карточка того же пользователя: ошибка
-9. Чужую карточку закрыть нельзя
-10. Владелец закрывает карточку и получает ренту
-11. Депозит без карточки: ошибка
-12. После закрытия карточку можно создать заново
-13. Не админ не может поставить паузу
-14. При паузе `create_user_card` падает с `VaultPaused`, после снятия паузы работает
-
-## Частые ошибки
-
-| Ошибка | Причина | Решение |
-|---|---|---|
-| `insufficient funds` при деплое | мало SOL | пополни кошелёк на devnet |
-| `AccountNotInitialized` в тестах | программа не задеплоена или другой ID | `anchor keys sync` → `anchor build` → `anchor deploy` |
-| `already in use` при `create_user_card` | у пользователя уже есть карточка | ожидаемо, карточка одна на пользователя |
-| `VaultPaused` | админ поставил vault на паузу | `set_paused(false)` от админа |
-| `ZeroAmount` | передан `amount = 0` | передай сумму больше нуля |
-| `SharesTooSmall` | депозит слишком мал относительно vault | увеличь сумму депозита |
-| `429 Too Many Requests` в тестах | лимит публичного devnet RPC | подожди, запросы повторяются сами |
+* **Что такое CPI и зачем он нужен?**
+Cross-Program Invocation — это механизм, позволяющий одной программе вызывать другую. Это фундаментальная вещь для модульности в Solana: смарт-контракты могут напрямую взаимодействовать со стандартной Token Program или другими внешними DeFi-протоколами, избегая дублирования стандартной логики.
+* **В каких случаях подпись ставит юзер, а в каких — программа?**
+Пользователь подписывает те действия, которые затрагивают его персональные активы (например, внесение депозита или сжигание долей). Программа же задействует программные подписи через PDA (Program Derived Address) в ситуациях, когда актив принадлежит системному контракту, у которого нет закрытого ключа.
+* **Почему у создателя ваута нет возможности просто так забрать оттуда чужие средства?**
+Логика хранилища изначально спроектирована как децентрализованный пул: активы распределены между участниками строго пропорционально их долям (`share-токенам`). У администратора нет привилегий на вывод чужих денег, так как код контракта просто не предусматривает возможность подписать такую операцию от имени PDA вне строго регламентированных правил.

@@ -178,6 +178,9 @@ pub mod simple_vault {
         let vault = &mut ctx.accounts.vault_state;
         vault.total_tokens = vault.total_tokens.checked_sub(tokens_out).ok_or(VaultError::MathOverflow)?;
         vault.total_shares = vault.total_shares.checked_sub(shares_amount).ok_or(VaultError::MathOverflow)?;
+        
+        let card = &mut ctx.accounts.user_card;
+        card.shares = card.shares.saturating_sub(shares_amount);
 
 
         msg!(
@@ -340,6 +343,14 @@ pub struct Withdraw<'info> {
         bump = vault_state.bump,
     )]
     pub vault_state: Account<'info, VaultState>,
+    
+    #[account(
+        mut,
+        seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
+        bump = user_card.bump,
+        constraint = user_card.owner == user.key()
+    )]
+    pub user_card: Account<'info, UserCard>,
 
     /// Vault token account — отправляет токены пользователю
     #[account(
@@ -418,7 +429,8 @@ pub struct CloseUserCard<'info> {
         close = user,
         seeds = [b"user_card", vault_state.key().as_ref(), user.key().as_ref()],
         bump = user_card.bump,
-        constraint = user_card.owner == user.key()
+        constraint = user_card.owner == user.key(),
+        constraint = user_card.shares == 0 @ VaultError::CardHasShares
     )]
     pub user_card: Account<'info, UserCard>,
 
@@ -499,4 +511,6 @@ pub enum VaultError {
     InvalidTickRange,
     #[msg("Vault is paused")]
     VaultPaused,
+    #[msg("Card still has shares: withdraw first")]
+    CardHasShares,
 }
